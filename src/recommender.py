@@ -1,55 +1,12 @@
-from typing import List, Dict, Tuple, Optional
-from dataclasses import dataclass
+from typing import List, Dict, Tuple
 
-@dataclass
-class Song:
-    """Represents a song and its audio attributes."""
-    id: int
-    title: str
-    artist: str
-    genre: str
-    mood: str
-    energy: float
-    tempo_bpm: float
-    valence: float
-    danceability: float
-    acousticness: float
-    liveness: float
-    instrumentalness: float
-    speechiness: float
+from src.logger import get_logger, log_retrieval, log_recommendations
 
-@dataclass
-class UserProfile:
-    """Stores a user's derived taste preferences built from their liked songs."""
-    favorite_genre: str
-    favorite_mood: str
-    target_energy: float
-    target_valence: float
-    target_danceability: float
-    target_acousticness: float
-    target_tempo_bpm: float
-    target_instrumentalness: float
-    target_liveness: float
-    target_speechiness: float
-    liked_song_ids: list
-
-class Recommender:
-    """OOP wrapper around the recommendation logic."""
-
-    def __init__(self, songs: List[Song]):
-        self.songs = songs
-
-    def recommend(self, user: UserProfile, k: int = 5) -> List[Song]:
-        # TODO: Implement recommendation logic
-        return self.songs[:k]
-
-    def explain_recommendation(self, user: UserProfile, song: Song) -> str:
-        # TODO: Implement explanation logic
-        return "Explanation placeholder"
+logger = get_logger(__name__)
 
 
 def load_songs(csv_path: str) -> List[Dict]:
-    """Reads songs.csv and returns a list of song dicts with numeric fields cast to float/int."""
+    """Reads a songs CSV and returns a list of song dicts with numeric fields cast to float/int."""
     import csv
 
     numeric_fields = {
@@ -72,7 +29,7 @@ def load_songs(csv_path: str) -> List[Dict]:
                 row[field] = cast(row[field])
             songs.append(row)
 
-    print(f"Loaded songs: {len(songs)}")
+    logger.debug("Loaded %d songs from %s", len(songs), csv_path)
     return songs
 
 
@@ -130,7 +87,7 @@ def score_song(song: Dict, user_prefs: Dict) -> Tuple[float, str]:
             if song_key == "tempo_bpm":
                 song_val = (song_val - TEMPO_MIN) / (TEMPO_MAX - TEMPO_MIN)
                 user_val = (user_val - TEMPO_MIN) / (TEMPO_MAX - TEMPO_MIN)
-            pts = max_pts * (1 - abs(song_val - user_val))
+            pts = max(0.0, max_pts * (1 - abs(song_val - user_val)))
             score += pts
             reasons.append(f"{song_key} match (+{pts:.2f})")
 
@@ -148,3 +105,46 @@ def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tup
     ]
 
     return sorted(scored, key=lambda x: x[1], reverse=True)[:k]
+
+
+def get_recommendations(
+    user_prefs: Dict,
+    retriever,
+    k: int = 5,
+    retrieve_k: int = 100,
+    round_num: int = 1,
+    min_popularity: int = 0,
+) -> List[Tuple[Dict, float, str]]:
+    """
+    Full RAG pipeline: retrieve candidates → score → return top-k.
+
+    1. The retriever does a cosine-similarity search over 72k songs
+       and returns the top `retrieve_k` closest matches.
+    2. The existing score_song() logic re-ranks those candidates
+       using mood, genre, and numeric feature weights.
+    3. The final top-k are returned.
+
+    Parameters
+    ----------
+    user_prefs  : preference dict (genre, mood, energy, valence, …)
+    retriever   : a SongRetriever instance (loaded once at app startup)
+    k           : number of final recommendations to return
+    retrieve_k  : number of RAG candidates to fetch before re-ranking
+    round_num   : current feedback round (for logging)
+    """
+    exclude_ids = user_prefs.get("liked_song_ids", [])
+
+    # Step 1 — RAG: vector search over full catalog
+    candidates = retriever.retrieve(user_prefs, k=retrieve_k, exclude_ids=exclude_ids, min_popularity=min_popularity)
+    log_retrieval(round_num, user_prefs, len(candidates))
+    logger.info("RAG retrieved %d candidates | round=%d", len(candidates), round_num)
+
+    # Step 2 — Re-rank candidates with the scoring function
+    results = recommend_songs(user_prefs, candidates, k=k)
+
+    # Step 3 — Log what was recommended
+    titles = [r[0]["title"] for r in results]
+    log_recommendations(round_num, titles, liked_count=0)
+    logger.info("Final recommendations: %s", titles)
+
+    return results

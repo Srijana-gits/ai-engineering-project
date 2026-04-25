@@ -13,3 +13,9 @@ venv/
 
 # Pytest cache
 .pytest_cache/
+
+# Environment variables — never commit API keys
+.env
+
+# Log files — contain usage history and query patterns
+logs/

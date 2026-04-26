@@ -1,5 +1,5 @@
 """
-Feedback Agent — multi-step agentic workflow using Groq + LLaMA 3.3.
+Feedback Agent — multi-step agentic workflow using Google Gemini.
 
 When the user rates songs (like / dislike) the agent runs three observable
 tool-call steps in sequence:
@@ -30,8 +30,8 @@ Usage
 import json
 import os
 
+import google.generativeai as genai
 from dotenv import load_dotenv
-from groq import Groq
 
 from src.logger import get_logger, log_agent_call, log_error
 
@@ -39,10 +39,10 @@ load_dotenv()
 
 logger = get_logger(__name__)
 
-# ── Groq client ───────────────────────────────────────────────────────────────
+# ── Gemini client ─────────────────────────────────────────────────────────────
 
-_client = Groq(api_key=os.getenv("GROQ_API_KEY", "").strip())
-MODEL   = "llama-3.3-70b-versatile"
+genai.configure(api_key=os.getenv("GEMINI_API_KEY", "").strip())
+MODEL = "gemini-2.0-flash"
 
 # ── Valid values the model must choose from ───────────────────────────────────
 
@@ -61,104 +61,76 @@ VALID_MOODS = [
     "intense", "melancholic", "moody", "relaxed", "sad",
 ]
 
-# ── Tool definitions (JSON Schema) ────────────────────────────────────────────
-# Each tool is one observable reasoning step. The model MUST call all three.
+# ── Tool definitions ──────────────────────────────────────────────────────────
 
 TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "analyze_feedback",
-            "description": (
+    genai.protos.Tool(function_declarations=[
+        genai.protos.FunctionDeclaration(
+            name="analyze_feedback",
+            description=(
                 "STEP 1: Analyze the user's liked and disliked songs to identify "
                 "clear taste patterns. Look at genre, mood, energy, valence, and "
                 "other audio features."
             ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "liked_patterns": {
-                        "type": "string",
-                        "description": "What do the liked songs have in common?",
-                    },
-                    "disliked_patterns": {
-                        "type": "string",
-                        "description": "What do the disliked songs have in common?",
-                    },
-                    "key_insight": {
-                        "type": "string",
-                        "description": "One concise sentence summarising what this user actually wants.",
-                    },
+            parameters=genai.protos.Schema(
+                type=genai.protos.Type.OBJECT,
+                properties={
+                    "liked_patterns":   genai.protos.Schema(type=genai.protos.Type.STRING, description="What do the liked songs have in common?"),
+                    "disliked_patterns":genai.protos.Schema(type=genai.protos.Type.STRING, description="What do the disliked songs have in common?"),
+                    "key_insight":      genai.protos.Schema(type=genai.protos.Type.STRING, description="One concise sentence summarising what this user actually wants."),
                 },
-                "required": ["liked_patterns", "disliked_patterns", "key_insight"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_preferences",
-            "description": (
+                required=["liked_patterns", "disliked_patterns", "key_insight"],
+            ),
+        ),
+        genai.protos.FunctionDeclaration(
+            name="update_preferences",
+            description=(
                 "STEP 2: Translate the taste analysis into updated numeric preference "
                 "values. All float fields must be between 0.0 and 1.0. "
                 f"genre must be one of: {', '.join(VALID_GENRES)}. "
                 f"mood must be one of: {', '.join(VALID_MOODS)}."
             ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "genre":            {"type": "string"},
-                    "mood":             {"type": "string"},
-                    "energy":           {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                    "valence":          {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                    "danceability":     {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                    "acousticness":     {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                    "instrumentalness": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                    "speechiness":      {"type": "number", "minimum": 0.0, "maximum": 1.0},
-                    "tempo_bpm":        {"type": "number", "minimum": 40.0, "maximum": 250.0},
+            parameters=genai.protos.Schema(
+                type=genai.protos.Type.OBJECT,
+                properties={
+                    "genre":            genai.protos.Schema(type=genai.protos.Type.STRING),
+                    "mood":             genai.protos.Schema(type=genai.protos.Type.STRING),
+                    "energy":           genai.protos.Schema(type=genai.protos.Type.NUMBER),
+                    "valence":          genai.protos.Schema(type=genai.protos.Type.NUMBER),
+                    "danceability":     genai.protos.Schema(type=genai.protos.Type.NUMBER),
+                    "acousticness":     genai.protos.Schema(type=genai.protos.Type.NUMBER),
+                    "instrumentalness": genai.protos.Schema(type=genai.protos.Type.NUMBER),
+                    "speechiness":      genai.protos.Schema(type=genai.protos.Type.NUMBER),
+                    "tempo_bpm":        genai.protos.Schema(type=genai.protos.Type.NUMBER),
                 },
-                "required": [
+                required=[
                     "genre", "mood", "energy", "valence", "danceability",
                     "acousticness", "instrumentalness", "speechiness", "tempo_bpm",
                 ],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "set_confidence",
-            "description": (
+            ),
+        ),
+        genai.protos.FunctionDeclaration(
+            name="set_confidence",
+            description=(
                 "STEP 3: Rate your confidence in the preference update. "
                 "Use a low score (0.3–0.5) if there are very few ratings or they conflict. "
                 "Use a high score (0.8–1.0) if patterns are clear and consistent."
             ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "score": {
-                        "type": "number",
-                        "minimum": 0.0,
-                        "maximum": 1.0,
-                        "description": "Confidence score between 0.0 and 1.0.",
-                    },
-                    "reason": {
-                        "type": "string",
-                        "description": "One sentence explaining this confidence level.",
-                    },
+            parameters=genai.protos.Schema(
+                type=genai.protos.Type.OBJECT,
+                properties={
+                    "score":  genai.protos.Schema(type=genai.protos.Type.NUMBER, description="Confidence score between 0.0 and 1.0."),
+                    "reason": genai.protos.Schema(type=genai.protos.Type.STRING, description="One sentence explaining this confidence level."),
                 },
-                "required": ["score", "reason"],
-            },
-        },
-    },
+                required=["score", "reason"],
+            ),
+        ),
+    ])
 ]
-
 
 # ── Prompt builder ─────────────────────────────────────────────────────────────
 
 def _build_prompt(current_prefs: dict, feedback_items: list) -> str:
-    """Formats the user's current prefs and rated songs into a clear prompt."""
-
     liked    = [f for f in feedback_items if f["rating"] == "like"]
     disliked = [f for f in feedback_items if f["rating"] == "dislike"]
 
@@ -208,92 +180,81 @@ def run_feedback_agent(
     """
     Runs the 3-step agentic feedback loop and returns updated preferences.
 
-    Parameters
-    ----------
-    current_prefs  : the user's current preference dict
-    feedback_items : list of {"song": dict, "rating": "like" | "dislike"}
-    round_num      : which feedback round this is (for logging)
-
     Returns
     -------
     {
-        "updated_prefs": dict,   # new preference values
-        "confidence":    float,  # 0.0 – 1.0
-        "reasoning":     str,    # human-readable insight from step 1
+        "updated_prefs": dict,
+        "confidence":    float,
+        "reasoning":     str,
     }
     """
-
     if not feedback_items:
         logger.warning("run_feedback_agent called with no feedback items — returning prefs unchanged")
         return {"updated_prefs": current_prefs, "confidence": 0.0, "reasoning": "No feedback provided."}
 
-    messages = [
-        {"role": "system", "content": "You are a music taste analyst. Always use the provided tools to reason step by step."},
-        {"role": "user",   "content": _build_prompt(current_prefs, feedback_items)},
-    ]
+    model = genai.GenerativeModel(
+        model_name=MODEL,
+        tools=TOOLS,
+        system_instruction="You are a music taste analyst. Always use the provided tools to reason step by step.",
+    )
 
-    # Results collected from each tool call
-    steps: dict = {}
+    chat    = model.start_chat()
+    steps   = {}
+    prompt  = _build_prompt(current_prefs, feedback_items)
+    message = prompt
+
     MAX_ITERATIONS = 8
-
     logger.info("Starting feedback agent | round=%d | feedback_count=%d", round_num, len(feedback_items))
 
     for iteration in range(MAX_ITERATIONS):
 
-        # All 3 steps done — exit the loop
         if all(k in steps for k in ("analyze_feedback", "update_preferences", "set_confidence")):
             break
 
         try:
-            response = _client.chat.completions.create(
-                model=MODEL,
-                messages=messages,
-                tools=TOOLS,
-                tool_choice="required",   # force the model to call a tool
-                max_tokens=1024,
+            response = chat.send_message(
+                message,
+                tool_config={"function_calling_config": {"mode": "ANY"}},
             )
         except Exception as exc:
-            log_error("groq_api_call", exc)
+            log_error("gemini_api_call", exc)
             raise
 
-        message = response.choices[0].message
+        # Collect all function calls from the response
+        function_calls = [p.function_call for p in response.parts if p.function_call]
 
-        # No tool call returned — shouldn't happen with tool_choice="required"
-        if not message.tool_calls:
+        if not function_calls:
             logger.warning("No tool call returned on iteration %d — breaking", iteration)
             break
 
-        # Process each tool call in the response
-        messages.append(message)
-
-        for tool_call in message.tool_calls:
-            name = tool_call.function.name
-            try:
-                args = json.loads(tool_call.function.arguments)
-            except json.JSONDecodeError as exc:
-                log_error(f"json_parse_{name}", exc)
-                args = {}
-
+        # Process each tool call and build the function responses
+        tool_responses = []
+        for fc in function_calls:
+            name = fc.name
+            args = dict(fc.args)
             steps[name] = args
-            logger.info("Tool called: %s | args=%s", name, json.dumps(args, ensure_ascii=False))
+            logger.info("Tool called: %s | args=%s", name, json.dumps(args, ensure_ascii=False, default=str))
 
-            # Feed the result back so the model can proceed to the next step
-            messages.append({
-                "role":         "tool",
-                "tool_call_id": tool_call.id,
-                "content":      json.dumps(args),
-            })
+            tool_responses.append(
+                genai.protos.Part(
+                    function_response=genai.protos.FunctionResponse(
+                        name=name,
+                        response={"result": args},
+                    )
+                )
+            )
+
+        # Feed all results back in one message
+        message = genai.protos.Content(parts=tool_responses, role="user")
 
     # ── Extract results ───────────────────────────────────────────────────────
 
-    analysis   = steps.get("analyze_feedback",   {})
-    new_prefs  = steps.get("update_preferences", {})
-    conf_step  = steps.get("set_confidence",     {})
+    analysis  = steps.get("analyze_feedback",   {})
+    new_prefs = steps.get("update_preferences", {})
+    conf_step = steps.get("set_confidence",     {})
 
-    # Merge updated prefs on top of current ones (keeps any keys the model skipped)
     updated_prefs = {**current_prefs, **new_prefs}
 
-    # Clamp numeric fields to valid ranges
     for key in ["energy", "valence", "danceability", "acousticness",
                 "instrumentalness", "speechiness"]:
         if key in updated_prefs:
@@ -302,7 +263,6 @@ def run_feedback_agent(
     if "tempo_bpm" in updated_prefs:
         updated_prefs["tempo_bpm"] = round(max(40.0, min(250.0, float(updated_prefs["tempo_bpm"]))), 1)
 
-    # Validate genre / mood — fall back to current if the model gave an invalid value
     if updated_prefs.get("genre") not in VALID_GENRES:
         updated_prefs["genre"] = current_prefs.get("genre", "pop")
 
@@ -314,13 +274,12 @@ def run_feedback_agent(
 
     reasoning = analysis.get("key_insight", "Preferences updated based on your feedback.")
 
-    # ── Log the completed agent call ──────────────────────────────────────────
     log_agent_call(
-        round_num       = round_num,
-        feedback_summary= f"{sum(1 for f in feedback_items if f['rating']=='like')} likes, "
-                          f"{sum(1 for f in feedback_items if f['rating']=='dislike')} dislikes",
-        confidence      = confidence,
-        updated_prefs   = updated_prefs,
+        round_num        = round_num,
+        feedback_summary = f"{sum(1 for f in feedback_items if f['rating']=='like')} likes, "
+                           f"{sum(1 for f in feedback_items if f['rating']=='dislike')} dislikes",
+        confidence       = confidence,
+        updated_prefs    = updated_prefs,
     )
 
     return {

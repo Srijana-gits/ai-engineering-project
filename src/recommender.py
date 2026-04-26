@@ -132,10 +132,11 @@ def get_recommendations(
     retrieve_k  : number of RAG candidates to fetch before re-ranking
     round_num   : current feedback round (for logging)
     """
-    exclude_ids = user_prefs.get("liked_song_ids", [])
+    exclude_ids     = user_prefs.get("liked_song_ids", [])
+    disliked_genres = user_prefs.get("disliked_genres", [])
 
     # Step 1 — RAG: vector search over full catalog
-    candidates = retriever.retrieve(user_prefs, k=retrieve_k, exclude_ids=exclude_ids, min_popularity=min_popularity)
+    candidates = retriever.retrieve(user_prefs, k=retrieve_k, exclude_ids=exclude_ids, min_popularity=min_popularity, disliked_genres=disliked_genres)
     log_retrieval(round_num, user_prefs, len(candidates))
     logger.info("RAG retrieved %d candidates | round=%d", len(candidates), round_num)
 

@@ -152,21 +152,24 @@ class SongRetriever:
         k: int = 100,
         exclude_ids: Optional[List[int]] = None,
         min_popularity: int = 0,
+        disliked_genres: Optional[List[str]] = None,
     ) -> List[Dict]:
         """
         Returns the top-k songs most similar to user_prefs by cosine similarity.
 
         Parameters
         ----------
-        user_prefs   : dict with audio-feature keys (see FEATURE_KEYS)
-        k            : number of candidates to return
-        exclude_ids  : song IDs to exclude (already heard / rated)
+        user_prefs      : dict with audio-feature keys (see FEATURE_KEYS)
+        k               : number of candidates to return
+        exclude_ids     : song IDs to exclude (already heard / rated)
+        disliked_genres : genres to exclude (learned from dislikes)
 
         Returns
         -------
         List of song dicts sorted by similarity descending.
         """
-        exclude_set = set(exclude_ids or [])
+        exclude_set  = set(exclude_ids or [])
+        disliked_set = set(disliked_genres or [])
 
         query = self._user_vector(user_prefs)                   # (8,)
         scores = self._matrix @ query                            # (N,)  cosine sim
@@ -179,7 +182,9 @@ class SongRetriever:
             if len(candidates) >= k:
                 break
             song = self.songs[idx]
-            if song["id"] not in exclude_set and song.get("popularity", 0) >= min_popularity:
+            if (song["id"] not in exclude_set
+                    and song.get("popularity", 0) >= min_popularity
+                    and song["genre"] not in disliked_set):
                 candidates.append({**song, "_similarity": float(scores[idx])})
 
         logger.debug(

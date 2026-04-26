@@ -396,6 +396,10 @@ if st.session_state.feedback:
                 newly_liked  = [v["song"]["id"] for v in feedback_items if v["rating"] == "like"]
                 result["updated_prefs"]["liked_song_ids"] = list(set(prev_liked + newly_liked))
 
+                prev_disliked_genres  = st.session_state.current_prefs.get("disliked_genres", [])
+                newly_disliked_genres = [v["song"]["genre"] for v in feedback_items if v["rating"] == "dislike"]
+                result["updated_prefs"]["disliked_genres"] = list(set(prev_disliked_genres + newly_disliked_genres))
+
                 st.session_state.current_prefs = result["updated_prefs"]
                 st.session_state.agent_result  = result
                 st.session_state.round_num    += 1

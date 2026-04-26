@@ -2,7 +2,7 @@
 
 ## What this system does
 
-This system recommends songs based on a user's stated preferences: genre, mood, energy, valence, tempo and improves those recommendations round-by-round using an AI feedback agent. After you rate songs (like/dislike), Google Gemini 2.0 Flash reads your feedback, adjusts your preference profile, and the next round reflects those changes.
+This system recommends songs based on a user's stated preferences: genre, mood, energy, valence, tempo and improves those recommendations round-by-round using an AI feedback agent. After you rate songs (like/dislike), Groq's LLaMA 3.3 70B reads your feedback, adjusts your preference profile, and the next round reflects those changes.
 
 Built as a learning project to explore RAG pipelines, LLM tool use, and evaluation loops. Not for production use.
 
@@ -13,7 +13,7 @@ Built as a learning project to explore RAG pipelines, LLM tool use, and evaluati
 The starting point was a simple 20-song catalog with a single scoring function (`score_song`) and a command-line interface (`src/main.py`). From that foundation, the project was extended to add:
 - A 72k-song catalog from a public Spotify dataset
 - Vector similarity retrieval (`src/retriever.py`) to replace brute-force scoring
-- A Gemini LLM feedback agent (`src/feedback_agent.py`) to update preferences between rounds
+- A Groq LLM feedback agent (`src/feedback_agent.py`) to update preferences between rounds
 - A Streamlit web UI (`app.py`) replacing the CLI
 - Structured logging (`src/logger.py`) and an evaluation layer (`src/evaluator.py`)
 - A full unit test suite (37 tests) and an integration harness
@@ -62,11 +62,11 @@ A music recommender has a low misuse surface compared to most AI systems. The re
 
 **Preference profiling.** The system learns what you like and adjusts to match it. If deployed with user accounts and persistent storage, that behavioral data could be used to infer personality traits or emotional states beyond music taste. In this project there are no accounts and no persistent storage, so this risk doesn't apply — but it would matter in a real deployment.
 
-**API key exposure.** The Gemini API key is stored in `.env`. If that file were committed to a public repository, the key could be used to run LLM calls at the account holder's expense. Mitigation: `.env` is excluded in `.gitignore` and `.env.example` is provided so users know the expected format without committing real credentials.
+**API key exposure.** The Groq API key is stored in `.env`. If that file were committed to a public repository, the key could be used to run LLM calls at the account holder's expense. Mitigation: `.env` is excluded in `.gitignore` and `.env.example` is provided so users know the expected format without committing real credentials.
 
 **Catalog manipulation.** If the song catalog were user-editable, someone could inject entries with extreme feature values to always rank first. The current system reads from a static file, so this is not a real risk here.
 
-The system doesn't make consequential decisions, handle sensitive personal data, or interact with external services beyond Google's Gemini inference API. The responsible use concerns are real but narrow in scope for a system of this kind.
+The system doesn't make consequential decisions, handle sensitive personal data, or interact with external services beyond Groq's inference API. The responsible use concerns are real but narrow in scope for a system of this kind.
 
 ---
 

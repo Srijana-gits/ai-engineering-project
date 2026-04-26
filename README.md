@@ -1,6 +1,6 @@
 # Music Recommender with AI Feedback Loop
 
-A song recommendation system built on a RAG pipeline and an LLM feedback agent. You set a preference profile, rate the results, and the system adjusts your preferences round-by-round using Google Gemini. With each round, the recommendations get noticeably different from previous rounds and measurably better.
+A song recommendation system built on a RAG pipeline and an LLM feedback agent. You set a preference profile, rate the results, and the system adjusts your preferences round-by-round using Groq's LLaMA 3.3. With each round, the recommendations get noticeably different from previous rounds and measurably better.
 
 ---
 
@@ -20,7 +20,7 @@ From that base, it was extended into what it is now: a 72k-song catalog with vec
 
 **Ranking** (`src/recommender.py`) — Scores each candidate: mood (up to +3.0 pts), genre (+2.0 pts), and six numeric audio features weighted by how much each one matters to the listening experience.
 
-**AI Feedback Agent** (`src/feedback_agent.py`) — Calls Google Gemini 2.0 Flash via structured tool use. Three sequential calls: `analyze_feedback` → `update_preferences` → `set_confidence`. The model edits the preference vector directly and explains its reasoning.
+**AI Feedback Agent** (`src/feedback_agent.py`) — Calls Groq's LLaMA 3.3 70B via structured tool use. Three sequential calls: `analyze_feedback` → `update_preferences` → `set_confidence`. The model edits the preference vector directly and explains its reasoning.
 
 **Evaluator** (`src/evaluator.py`) — Tracks satisfaction % (liked / shown) and agent confidence per round. After two rounds you can see the trend line.
 
@@ -117,7 +117,7 @@ source .venv/bin/activate       # Mac / Linux
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Set your Gemini API key (free at aistudio.google.com)
+# 3. Set your Groq API key (free at console.groq.com)
 cp .env.example .env
 # open .env and paste your key
 
